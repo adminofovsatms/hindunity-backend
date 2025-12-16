@@ -1,0 +1,7 @@
+flask
+flask-cors
+supabase-py
+python-dotenv
+boto3
+
+
