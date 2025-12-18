@@ -85,7 +85,7 @@ def delete_media_from_storage(media_urls):
                     s3_key = media_url.split(f'{S3_BUCKET}.s3.amazonaws.com/')[1]
                     
                     # Delete from S3
-                    s3_client.delete_object(
+                    s3_client.delete_object( 
                         Bucket=S3_BUCKET,
                         Key=s3_key
                     )
