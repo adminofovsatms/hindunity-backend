@@ -99,7 +99,7 @@ def delete_media_from_storage(media_urls):
     except Exception as e:
         print(f"❌ Error deleting media: {str(e)}")
 
-@app.route('/api/get-upload-url', methods=['POST'])
+@app.route('/api/get-upload-url', methods=['OPTIONS','POST'])
 def get_upload_url():
     """Generate presigned URL for S3 upload"""
     try:
@@ -425,5 +425,6 @@ def health_check():
 
 if __name__ == "__main__":
     app.run(debug=True, port=5001)
+
 
 
