@@ -12,7 +12,13 @@ load_dotenv()
 
 app = Flask(__name__)
 # Replace your entire CORS config with this:
-CORS(app, origins=["http://localhost:8081", "http://localhost:5173", "https://server.onehindus.com","https://onehindus.com","https://www.onehindus.com"])
+CORS(app, origins=[
+    "http://localhost:8081", 
+    "http://localhost:5173", 
+    "https://server.onehindus.com",
+    "https://onehindus.com",
+    "https://www.onehindus.com"
+], supports_credentials=True, methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 
 # Supabase client
 supabase = create_client(
@@ -102,6 +108,9 @@ def delete_media_from_storage(media_urls):
 @app.route('/api/get-upload-url', methods=['OPTIONS','POST'])
 def get_upload_url():
     """Generate presigned URL for S3 upload"""
+    if request.method == "OPTIONS":
+        # Preflight request, respond with OK
+        return "", 200
     try:
         data = request.json
         user_id = data.get('user_id')
@@ -191,7 +200,7 @@ def get_avatar_upload_url():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
-@app.route('/botposts', methods=['POST'])
+@app.route('/botposts', methods=['OPTIONS','POST'])
 def create_post_by_bot():
     """
     Create a single post with tweet data and media URLs
@@ -208,6 +217,9 @@ def create_post_by_bot():
         link_preview": "link preview data"
     }
     """
+    if request.method == "OPTIONS":
+        # Preflight request, respond with OK
+        return "", 200
     try:
         # Get fresh/cached token
         token = auth_manager.get_token()
@@ -425,6 +437,7 @@ def health_check():
 
 if __name__ == "__main__":
     app.run(debug=True, port=5001)
+
 
 
 
