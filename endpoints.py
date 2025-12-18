@@ -11,14 +11,35 @@ import time
 load_dotenv()
 
 app = Flask(__name__)
-# Replace your entire CORS config with this:
-CORS(app, origins=[
-    "http://localhost:8081", 
-    "http://localhost:5173", 
+
+# CORS configuration
+ALLOWED_ORIGINS = {
+    "http://localhost:8081",
+    "http://localhost:5173",
     "https://server.onehindus.com",
     "https://onehindus.com",
-    "https://www.onehindus.com"
-], supports_credentials=True, methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+    "https://www.onehindus.com",
+}
+
+# Let flask-cors handle most cases
+CORS(
+    app,
+    resources={r"/api/*": {"origins": list(ALLOWED_ORIGINS)}},
+    supports_credentials=True,
+)
+
+
+@app.after_request
+def add_cors_headers(response):
+    """Ensure CORS headers are always present for allowed origins."""
+    origin = request.headers.get("Origin")
+    if origin in ALLOWED_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Vary"] = "Origin"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    return response
 
 # Supabase client
 supabase = create_client(
