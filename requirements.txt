@@ -1,6 +1,6 @@
 flask
 flask-cors
-supabase-py
+supabase
 python-dotenv
 boto3
 
