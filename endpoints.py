@@ -12,7 +12,7 @@ load_dotenv()
 
 app = Flask(__name__)
 # Replace your entire CORS config with this:
-CORS(app, origins=["http://localhost:8081", "http://localhost:5173", "https://hindunity-backend.vercel.app", "https://server.onehindus.com","https://onehindus.com","https://www.onehindus.com"])
+CORS(app, origins=["http://localhost:8081", "http://localhost:5173", "https://server.onehindus.com","https://onehindus.com","https://www.onehindus.com"])
 
 # Supabase client
 supabase = create_client(
