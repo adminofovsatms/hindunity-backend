@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from supabase import create_client
+from supabase import create_client, Client
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 import os
@@ -19,7 +19,6 @@ ALLOWED_ORIGINS = {
     "https://server.onehindus.com",
     "https://onehindus.com",
     "https://www.onehindus.com",
-    "https://hindunity-backend-shivakumar-cs-projects.vercel.app"
 }
 
 # Let flask-cors handle most cases
