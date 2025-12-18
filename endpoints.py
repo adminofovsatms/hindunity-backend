@@ -107,7 +107,7 @@ def get_upload_url():
         user_id = data.get('user_id')
         file_type = data.get('file_type')  # 'image' or 'video'
         file_name = data.get('file_name')
-        content_type = data.get('content_type')
+        content_type = data.get('content_type') 
         
         # Validate
         if not all([user_id, file_type, file_name, content_type]):
