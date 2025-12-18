@@ -11,7 +11,8 @@ import time
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:8081", "http://localhost:5173"])
+# Replace your entire CORS config with this:
+CORS(app, origins=["http://localhost:8081", "http://localhost:5173", "https://hindunity-backend.vercel.app"])
 
 # Supabase client
 supabase = create_client(
@@ -21,197 +22,180 @@ supabase = create_client(
 
 # S3 client
 s3_client = boto3.client(
-    "s3",
-    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-    region_name=os.getenv("AWS_REGION", "us-east-1"),
+    's3',
+    aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+    aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+    region_name=os.getenv('AWS_REGION', 'us-east-1')
 )
 
-S3_BUCKET = os.getenv("AWS_S3_BUCKET")
-STORAGE_BUCKET = os.getenv("SUPABASE_STORAGE_BUCKET", "tweets-media")
+S3_BUCKET = os.getenv('AWS_S3_BUCKET')
+STORAGE_BUCKET = os.getenv('SUPABASE_STORAGE_BUCKET', 'tweets-media')
 
-
+# Auth manager class
 class AuthManager:
-    """Simple auth manager to cache Supabase bot auth token."""
-
     def __init__(self):
         self.token = None
         self.user_id = None
         self.expires_at = None
-
+    
     def get_token(self):
         # Return cached token if still valid
         if self.token and datetime.now() < self.expires_at:
             print("Using cached token")
             return self.token
-
+        
         # Login and refresh token
-        auth = supabase.auth.sign_in_with_password(
-            {
-                "email": os.getenv("BOT_EMAIL"),
-                "password": os.getenv("BOT_PASSWORD"),
-            }
-        )
-
+        auth = supabase.auth.sign_in_with_password({
+            "email": os.getenv("BOT_EMAIL"),
+            "password": os.getenv("BOT_PASSWORD")
+        })
+        
         if not auth or not auth.session:
             raise Exception("Bot login failed")
-
+        
         self.token = auth.session.access_token
         self.user_id = auth.user.id
         self.expires_at = datetime.now() + timedelta(hours=1)
         print("Logged in and refreshed token")
         return self.token
-
+    
     def get_user_id(self):
         # Ensure we have a valid token (will login if needed)
         self.get_token()
         return self.user_id
 
-
 # Global auth manager
 auth_manager = AuthManager()
 
-
 def delete_media_from_storage(media_urls):
-    """Delete media files from S3."""
+    """Delete media files from S3"""
     if not media_urls:
         return
-
+    
     try:
         print(f"\n🗑️ Deleting {len(media_urls)} media files from S3...")
-
+        
         for media_url in media_urls:
             try:
                 # Extract S3 key from public URL
-                if f"{S3_BUCKET}.s3.amazonaws.com/" in media_url:
-                    s3_key = media_url.split(f"{S3_BUCKET}.s3.amazonaws.com/")[1]
-
+                # Example URL: https://bucket-name.s3.amazonaws.com/post-images/userid/123.jpg
+                # We need: post-images/userid/123.jpg
+                
+                if f'{S3_BUCKET}.s3.amazonaws.com/' in media_url:
+                    s3_key = media_url.split(f'{S3_BUCKET}.s3.amazonaws.com/')[1]
+                    
                     # Delete from S3
                     s3_client.delete_object(
                         Bucket=S3_BUCKET,
-                        Key=s3_key,
+                        Key=s3_key
                     )
                     print(f"   ✅ Deleted: {s3_key}")
                 else:
                     print(f"   ⚠️ Invalid URL format: {media_url}")
-
-            except Exception as e:  # noqa: BLE001
+                    
+            except Exception as e:
                 print(f"   ❌ Failed to delete {media_url}: {str(e)}")
-
-    except Exception as e:  # noqa: BLE001
+                
+    except Exception as e:
         print(f"❌ Error deleting media: {str(e)}")
 
-
-@app.route("/api/get-upload-url", methods=["POST"])
+@app.route('/api/get-upload-url', methods=['POST'])
 def get_upload_url():
-    """Generate presigned URL for S3 upload."""
+    """Generate presigned URL for S3 upload"""
     try:
-        data = request.json or {}
-        user_id = data.get("user_id")
-        file_type = data.get("file_type")  # "image" or "video"
-        file_name = data.get("file_name")
-        content_type = data.get("content_type")
-
+        data = request.json
+        user_id = data.get('user_id')
+        file_type = data.get('file_type')  # 'image' or 'video'
+        file_name = data.get('file_name')
+        content_type = data.get('content_type')
+        
         # Validate
         if not all([user_id, file_type, file_name, content_type]):
-            return jsonify({"error": "Missing required fields"}), 400
-
+            return jsonify({'error': 'Missing required fields'}), 400
+        
         # Generate S3 key
         timestamp = int(time.time() * 1000)
-        file_ext = file_name.split(".")[-1]
-        folder = "post-images" if file_type == "image" else "post-videos"
+        file_ext = file_name.split('.')[-1]
+        folder = 'post-images' if file_type == 'image' else 'post-videos'
         s3_key = f"{folder}/{user_id}/{timestamp}.{file_ext}"
-
+        
         # Generate presigned URL (expires in 5 minutes)
         presigned_url = s3_client.generate_presigned_url(
-            "put_object",
+            'put_object',
             Params={
-                "Bucket": S3_BUCKET,
-                "Key": s3_key,
-                "ContentType": content_type,
+                'Bucket': S3_BUCKET,
+                'Key': s3_key,
+                'ContentType': content_type
             },
-            ExpiresIn=300,  # 5 minutes
+            ExpiresIn=300  # 5 minutes
         )
-
+        
         # Public URL for database
         public_url = f"https://{S3_BUCKET}.s3.amazonaws.com/{s3_key}"
-
-        return (
-            jsonify(
-                {
-                    "upload_url": presigned_url,
-                    "public_url": public_url,
-                    "s3_key": s3_key,
-                }
-            ),
-            200,
-        )
-
-    except Exception as e:  # noqa: BLE001
+        
+        return jsonify({
+            'upload_url': presigned_url,
+            'public_url': public_url,
+            's3_key': s3_key
+        }), 200
+        
+    except Exception as e:
         print(f"❌ Error generating presigned URL: {str(e)}")
         import traceback
-
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({'error': str(e)}), 500
 
 
-@app.route("/api/get-avatar-upload-url", methods=["POST"])
+@app.route('/api/get-avatar-upload-url', methods=['POST'])
 def get_avatar_upload_url():
-    """Generate presigned URL for uploading/updating user avatar."""
+    """Generate presigned URL for uploading/updating user avatar"""
     try:
-        data = request.json or {}
-        user_id = data.get("user_id")
-        file_name = data.get("file_name")
-        content_type = data.get("content_type")
+        data = request.json
+        user_id = data.get('user_id')
+        file_name = data.get('file_name')
+        content_type = data.get('content_type')
 
         # Validate
         if not all([user_id, file_name, content_type]):
-            return jsonify({"error": "Missing required fields"}), 400
+            return jsonify({'error': 'Missing required fields'}), 400
 
         # Extract file extension
-        file_ext = file_name.split(".")[-1]
+        file_ext = file_name.split('.')[-1]
 
         # S3 key: always the same per user to overwrite old avatar
         s3_key = f"avatars/{user_id}/avatar.{file_ext}"
 
         # Generate presigned URL (expires in 5 minutes)
         presigned_url = s3_client.generate_presigned_url(
-            "put_object",
+            'put_object',
             Params={
-                "Bucket": S3_BUCKET,
-                "Key": s3_key,
-                "ContentType": content_type,
+                'Bucket': S3_BUCKET,
+                'Key': s3_key,
+                'ContentType': content_type
             },
-            ExpiresIn=300,  # 5 minutes
+            ExpiresIn=300  # 5 minutes
         )
 
         # Public URL for database
         public_url = f"https://{S3_BUCKET}.s3.amazonaws.com/{s3_key}"
 
-        return (
-            jsonify(
-                {
-                    "upload_url": presigned_url,
-                    "public_url": public_url,
-                    "s3_key": s3_key,
-                }
-            ),
-            200,
-        )
+        return jsonify({
+            'upload_url': presigned_url,
+            'public_url': public_url,
+            's3_key': s3_key
+        }), 200
 
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print(f"❌ Error generating presigned URL: {str(e)}")
         import traceback
-
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({'error': str(e)}), 500
 
-
-@app.route("/botposts", methods=["POST"])
+@app.route('/botposts', methods=['POST'])
 def create_post_by_bot():
     """
-    Create a single post with tweet data and media URLs.
-
+    Create a single post with tweet data and media URLs
+    
     Expected JSON:
     {
         "content": "tweet text",
@@ -220,54 +204,40 @@ def create_post_by_bot():
         "twitter_unique_id": "message_id",
         "twitter_username": "username",
         "source": "twitter",
-        "location": null
+        "location": null,
+        link_preview": "link preview data"
     }
     """
     try:
         # Get fresh/cached token
         token = auth_manager.get_token()
         user_id = auth_manager.get_user_id()
-
+        
         # Attach token to client
         supabase.postgrest.auth(token)
-
+        
         # Get request data
         data = request.json
-
+        
         if not data:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "No data provided",
-                    }
-                ),
-                400,
-            )
-
+            return jsonify({
+                "success": False,
+                "error": "No data provided"
+            }), 400
+        
         # Validate required fields
         if not data.get("content"):
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "content is required",
-                    }
-                ),
-                400,
-            )
-
+            return jsonify({
+                "success": False,
+                "error": "content is required"
+            }), 400
+        
         if not data.get("twitter_unique_id"):
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "twitter_unique_id is required",
-                    }
-                ),
-                400,
-            )
-
+            return jsonify({
+                "success": False,
+                "error": "twitter_unique_id is required"
+            }), 400
+        
         # Prepare post data
         post_data = {
             "user_id": user_id,
@@ -278,108 +248,91 @@ def create_post_by_bot():
             "twitter_username": data.get("twitter_username"),
             "source": data.get("source", "twitter"),
             "location": data.get("location"),
+            "link_preview": data.get("link_preview")
         }
-
+        
         media_urls = data.get("media_url", [])
-
+        
         print(f"\n💾 Creating post for tweet: {data.get('twitter_unique_id')}")
         if media_urls:
             print(f"   📎 With {len(media_urls)} media files")
-
+        
         # Insert post to database
-        response = supabase.table("posts").insert(post_data).execute()
-
-        print("✅ Post created successfully")
-
-        return (
-            jsonify(
-                {
-                    "success": True,
-                    "data": response.data,
-                    "message": "Post created successfully",
-                }
-            ),
-            201,
-        )
-
-    except Exception as e:  # noqa: BLE001
+        response = supabase.table('posts').insert(post_data).execute()
+        
+        print(f"✅ Post created successfully")
+        
+        return jsonify({
+            "success": True,
+            "data": response.data,
+            "message": "Post created successfully"
+        }), 201
+        
+    except Exception as e:
         print(f"\n❌ Error creating post: {str(e)}")
-
+        
         # If post insertion failed, delete uploaded media from S3
         media_urls = request.json.get("media_url", []) if request.json else []
         if media_urls:
-            print(
-                f"⚠️ Post insertion failed - cleaning up {len(media_urls)} media files..."
-            )
+            print(f"⚠️ Post insertion failed - cleaning up {len(media_urls)} media files...")
             delete_media_from_storage(media_urls)
-
+        
         import traceback
-
         traceback.print_exc()
+        
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "error": str(e),
-                }
-            ),
-            500,
-        )
-
-
-@app.route("/pendingbotposts", methods=["POST"])
+@app.route('/pendingbotposts', methods=['POST'])
 def create_post_by_bot_for_approval():
     """
-    Create a single post with tweet data and media URLs for approval queue.
+    Create a single post with tweet data and media URLs
+    
+    Expected JSON:
+    {
+        "content": "tweet text",
+        "post_type": "text",
+        "media_url": ["url1", "url2", ...] or null,
+        "twitter_unique_id": "message_id",
+        "twitter_username": "username",
+        "source": "twitter",
+        "location": null,
+        "link_preview": "link preview data"
 
-    Same payload as /botposts but writes to twitter_posts table.
+    }
     """
     try:
         # Get fresh/cached token
         token = auth_manager.get_token()
         user_id = auth_manager.get_user_id()
-
+        
         # Attach token to client
         supabase.postgrest.auth(token)
-
+        
         # Get request data
         data = request.json
-
+        
         if not data:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "No data provided",
-                    }
-                ),
-                400,
-            )
-
+            return jsonify({
+                "success": False,
+                "error": "No data provided"
+            }), 400
+        
         # Validate required fields
         if not data.get("content"):
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "content is required",
-                    }
-                ),
-                400,
-            )
-
+            return jsonify({
+                "success": False,
+                "error": "content is required"
+            }), 400
+        
         if not data.get("twitter_unique_id"):
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "twitter_unique_id is required",
-                    }
-                ),
-                400,
-            )
-
+            return jsonify({
+                "success": False,
+                "error": "twitter_unique_id is required"
+            }), 400
+        
         # Prepare post data
         post_data = {
             "user_id": user_id,
@@ -390,115 +343,85 @@ def create_post_by_bot_for_approval():
             "twitter_username": data.get("twitter_username"),
             "source": data.get("source", "twitter"),
             "location": data.get("location"),
+            "link_preview": data.get("link_preview")
         }
-
+        
         media_urls = data.get("media_url", [])
-
+        
         print(f"\n💾 Creating post for tweet: {data.get('twitter_unique_id')}")
         if media_urls:
             print(f"   📎 With {len(media_urls)} media files")
-
+        
         # Insert post to database
-        response = supabase.table("twitter_posts").insert(post_data).execute()
-
-        print("✅ Post created successfully")
-
-        return (
-            jsonify(
-                {
-                    "success": True,
-                    "data": response.data,
-                    "message": "Post created successfully",
-                }
-            ),
-            201,
-        )
-
-    except Exception as e:  # noqa: BLE001
+        response = supabase.table('twitter_posts').insert(post_data).execute()
+        
+        print(f"✅ Post created successfully")
+        
+        return jsonify({
+            "success": True,
+            "data": response.data,
+            "message": "Post created successfully"
+        }), 201
+        
+    except Exception as e:
         print(f"\n❌ Error creating post: {str(e)}")
-
+        
         # If post insertion failed, delete uploaded media from S3
         media_urls = request.json.get("media_url", []) if request.json else []
         if media_urls:
-            print(
-                f"⚠️ Post insertion failed - cleaning up {len(media_urls)} media files..."
-            )
+            print(f"⚠️ Post insertion failed - cleaning up {len(media_urls)} media files...")
             delete_media_from_storage(media_urls)
-
+        
         import traceback
-
         traceback.print_exc()
-
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "error": str(e),
-                }
-            ),
-            500,
-        )
+        
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 
-@app.route("/delete-media", methods=["POST"])
+@app.route('/delete-media', methods=['POST'])
 def delete_media():
-    """Delete media files from S3 using provided URLs."""
+    """Delete media files from S3 using provided URLs"""
     try:
-        data = request.json or {}
-        media_urls = data.get("media_urls", [])
-
+        data = request.json
+        media_urls = data.get('media_urls', [])
+        
         if not media_urls:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "No media URLs provided",
-                    }
-                ),
-                400,
-            )
-
+            return jsonify({
+                "success": False,
+                "error": "No media URLs provided"
+            }), 400
+        
         print(f"\n🗑️ Deleting {len(media_urls)} media files from S3")
         delete_media_from_storage(media_urls)
-
-        print("✅ Media deleted successfully")
-
-        return (
-            jsonify(
-                {
-                    "success": True,
-                    "message": f"Deleted {len(media_urls)} media files",
-                }
-            ),
-            200,
-        )
-
-    except Exception as e:  # noqa: BLE001
+        
+        print(f"✅ Media deleted successfully")
+        
+        return jsonify({
+            "success": True,
+            "message": f"Deleted {len(media_urls)} media files"
+        }), 200
+        
+    except Exception as e:
         print(f"\n❌ Error deleting media: {str(e)}")
         import traceback
-
         traceback.print_exc()
+        
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "error": str(e),
-                }
-            ),
-            500,
-        )
-
-
-@app.route("/health", methods=["GET"])
+@app.route('/health', methods=['GET'])
 def health_check():
-    """Health check endpoint."""
-    return (
-        jsonify(
-            {
-                "success": True,
-                "message": "Server is running",
-            }
-        ),
-        200,
-    )
+    """Health check endpoint"""
+    return jsonify({
+        "success": True,
+        "message": "Server is running"
+    }), 200
+
+
+if __name__ == "__main__":
+    app.run(debug=True, port=5001)
