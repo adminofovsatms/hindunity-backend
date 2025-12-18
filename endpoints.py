@@ -19,7 +19,7 @@ ALLOWED_ORIGINS = {
     "https://server.onehindus.com",
     "https://onehindus.com",
     "https://www.onehindus.com",
-    "https://hindunity-backend-shivakumar-cs-projects.vercel.app//api/get-upload-url"
+    "https://hindunity-backend-shivakumar-cs-projects.vercel.app"
 }
 
 # Let flask-cors handle most cases
