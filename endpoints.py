@@ -14,7 +14,6 @@ app = Flask(__name__)
 
 # CORS configuration
 ALLOWED_ORIGINS = {
-    
     "http://localhost:8081",
     "http://localhost:5173",
     "https://server.onehindus.com",
@@ -42,10 +41,16 @@ def add_cors_headers(response):
         response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
     return response
 
-# Supabase client
+# Regular Supabase client (for bot operations with user authentication)
 supabase = create_client(
     os.getenv("SUPABASE_URL"),
     os.getenv("SUPABASE_KEY")
+)
+
+# Admin Supabase client (for admin operations - no user auth needed)
+supabase_admin = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_SERVICE_KEY")
 )
 
 # S3 client
@@ -456,10 +461,59 @@ def health_check():
         "message": "Server is running"
     }), 200
 
+@app.route('/api/delete-user', methods=['OPTIONS', 'POST'])
+def delete_user():
+    """
+    Delete a user account using Supabase Admin API
+    
+    Expected JSON:
+    {
+        "user_id": "uuid-of-user-to-delete"
+    }
+    """
+    if request.method == "OPTIONS":
+        # Preflight request, respond with OK
+        return "", 200
+    
+    try:
+        data = request.json
+        
+        if not data:
+            return jsonify({
+                "success": False,
+                "error": "No data provided"
+            }), 400
+        
+        user_id = data.get('user_id')
+        
+        if not user_id:
+            return jsonify({
+                "success": False,
+                "error": "user_id is required"
+            }), 400
+        
+        print(f"\n🗑️ Deleting user: {user_id}")
+        
+        # Use admin client (without user auth token) for admin operations
+        response = supabase_admin.auth.admin.delete_user(user_id)
+        
+        print(f"✅ User deleted successfully: {user_id}")
+        
+        return jsonify({
+            "success": True,
+            "message": "User deleted successfully"
+        }), 200
+        
+    except Exception as e:
+        print(f"\n❌ Error deleting user: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
 
 if __name__ == "__main__":
     app.run(debug=True, port=5001)
-
-
-
-
