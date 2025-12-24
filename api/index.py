@@ -62,7 +62,7 @@ def get_supabase_admin():
         from supabase import create_client
         _supabase_admin = create_client(
             os.getenv("SUPABASE_URL"),
-            os.environ.get("SUPABASE_SERVICE_KEY")
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRlem9ybnFnd25saXdvc2prdHNnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MDY0Mzc4MSwiZXhwIjoyMDc2MjE5NzgxfQ.FIJDJ9Ltu804NHPKPnzzOXpwnQMntU57M6Yb8PKNFV8"
         )
     return _supabase_admin
 
