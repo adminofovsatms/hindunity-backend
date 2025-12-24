@@ -39,6 +39,7 @@ def add_cors_headers(response):
 # LAZY INITIALIZATION - Required for Vercel
 # ============================================
 
+
 _supabase = None
 _supabase_admin = None
 _s3_client = None
