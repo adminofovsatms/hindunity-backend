@@ -63,7 +63,7 @@ s3_client = boto3.client(
 
 S3_BUCKET = os.getenv('AWS_S3_BUCKET')
 STORAGE_BUCKET = os.getenv('SUPABASE_STORAGE_BUCKET', 'tweets-media')
-
+DEFAULT_BOT_USER_ID = "bdb9c10d-1127-476e-8b71-18acecc74824"
 # Auth manager class
 class AuthManager:
     def __init__(self):
@@ -324,6 +324,100 @@ def create_post_by_bot():
             "error": str(e)
         }), 500
 
+# @app.route('/pendingbotposts', methods=['POST'])
+# def create_post_by_bot_for_approval():
+#     """
+#     Create a single post with tweet data and media URLs
+    
+#     Expected JSON:
+#     {
+#         "content": "tweet text",
+#         "post_type": "text",
+#         "media_url": ["url1", "url2", ...] or null,
+#         "twitter_unique_id": "message_id",
+#         "twitter_username": "username",
+#         "source": "twitter",
+#         "location": null,
+#         "link_preview": "link preview data"
+
+#     }
+#     """
+#     try:
+#         # Get fresh/cached token
+#         token = auth_manager.get_token()
+#         user_id = auth_manager.get_user_id()
+        
+#         # Attach token to client
+#         supabase.postgrest.auth(token)
+        
+#         # Get request data
+#         data = request.json
+        
+#         if not data:
+#             return jsonify({
+#                 "success": False,
+#                 "error": "No data provided"
+#             }), 400
+        
+#         # Validate required fields
+#         if not data.get("content"):
+#             return jsonify({
+#                 "success": False,
+#                 "error": "content is required"
+#             }), 400
+        
+#         if not data.get("twitter_unique_id"):
+#             return jsonify({
+#                 "success": False,
+#                 "error": "twitter_unique_id is required"
+#             }), 400
+        
+#         # Prepare post data
+#         post_data = {
+#             "user_id": user_id,
+#             "content": data.get("content"),
+#             "post_type": data.get("post_type", "text"),
+#             "media_url": data.get("media_url"),  # Array of URLs or None
+#             "twitter_unique_id": data.get("twitter_unique_id"),
+#             "twitter_username": data.get("twitter_username"),
+#             "source": data.get("source", "twitter"),
+#             "location": data.get("location"),
+#             "link_preview": data.get("link_preview")
+#         }
+        
+#         media_urls = data.get("media_url", [])
+        
+#         print(f"\n💾 Creating post for tweet: {data.get('twitter_unique_id')}")
+#         if media_urls:
+#             print(f"   📎 With {len(media_urls)} media files")
+        
+#         # Insert post to database
+#         response = supabase.table('twitter_posts').insert(post_data).execute()
+        
+#         print(f"✅ Post created successfully")
+        
+#         return jsonify({
+#             "success": True,
+#             "data": response.data,
+#             "message": "Post created successfully"
+#         }), 201
+        
+#     except Exception as e:
+#         print(f"\n❌ Error creating post: {str(e)}")
+        
+#         # If post insertion failed, delete uploaded media from S3
+#         media_urls = request.json.get("media_url", []) if request.json else []
+#         if media_urls:
+#             print(f"⚠️ Post insertion failed - cleaning up {len(media_urls)} media files...")
+#             delete_media_from_storage(media_urls)
+        
+#         import traceback
+#         traceback.print_exc()
+        
+#         return jsonify({
+#             "success": False,
+#             "error": str(e)
+#         }), 500
 @app.route('/pendingbotposts', methods=['POST'])
 def create_post_by_bot_for_approval():
     """
@@ -339,17 +433,9 @@ def create_post_by_bot_for_approval():
         "source": "twitter",
         "location": null,
         "link_preview": "link preview data"
-
     }
     """
     try:
-        # Get fresh/cached token
-        token = auth_manager.get_token()
-        user_id = auth_manager.get_user_id()
-        
-        # Attach token to client
-        supabase.postgrest.auth(token)
-        
         # Get request data
         data = request.json
         
@@ -372,6 +458,29 @@ def create_post_by_bot_for_approval():
                 "error": "twitter_unique_id is required"
             }), 400
         
+        twitter_username = data.get("twitter_username")
+        
+        # Fetch user_id from twitter_id_map table
+        user_id = None
+        if twitter_username:
+            try:
+                print(f"\n🔍 Looking up user_id for Twitter username: {twitter_username}")
+                mapping_response = supabase_admin.table('twitter_id_map').select('user_id').eq('username', twitter_username).execute()
+                
+                if mapping_response.data and len(mapping_response.data) > 0:
+                    user_id = mapping_response.data[0]['user_id']
+                    print(f"   ✓ Found user_id: {user_id}")
+                else:
+                    user_id = DEFAULT_BOT_USER_ID
+                    print(f"   ⚠ Username not found in mapping, using default user_id: {user_id}")
+            except Exception as e:
+                print(f"   ✗ Error fetching from twitter_id_map: {e}")
+                user_id = DEFAULT_BOT_USER_ID
+                print(f"   ⚠ Using default user_id: {user_id}")
+        else:
+            user_id = DEFAULT_BOT_USER_ID
+            print(f"   ⚠ No twitter_username provided, using default user_id: {user_id}")
+        
         # Prepare post data
         post_data = {
             "user_id": user_id,
@@ -379,7 +488,7 @@ def create_post_by_bot_for_approval():
             "post_type": data.get("post_type", "text"),
             "media_url": data.get("media_url"),  # Array of URLs or None
             "twitter_unique_id": data.get("twitter_unique_id"),
-            "twitter_username": data.get("twitter_username"),
+            "twitter_username": twitter_username,
             "source": data.get("source", "twitter"),
             "location": data.get("location"),
             "link_preview": data.get("link_preview")
@@ -388,11 +497,12 @@ def create_post_by_bot_for_approval():
         media_urls = data.get("media_url", [])
         
         print(f"\n💾 Creating post for tweet: {data.get('twitter_unique_id')}")
+        print(f"   👤 User ID: {user_id}")
         if media_urls:
             print(f"   📎 With {len(media_urls)} media files")
         
-        # Insert post to database
-        response = supabase.table('twitter_posts').insert(post_data).execute()
+        # Insert post to database using admin client
+        response = supabase_admin.table('twitter_posts').insert(post_data).execute()
         
         print(f"✅ Post created successfully")
         
@@ -409,6 +519,7 @@ def create_post_by_bot_for_approval():
         media_urls = request.json.get("media_url", []) if request.json else []
         if media_urls:
             print(f"⚠️ Post insertion failed - cleaning up {len(media_urls)} media files...")
+            # Assuming you have this function defined elsewhere
             delete_media_from_storage(media_urls)
         
         import traceback
@@ -418,7 +529,6 @@ def create_post_by_bot_for_approval():
             "success": False,
             "error": str(e)
         }), 500
-
 
 @app.route('/delete-media', methods=['POST'])
 def delete_media():
@@ -514,6 +624,71 @@ def delete_user():
             "error": str(e)
         }), 500
 
+@app.route('/admin/accept-twitter-post', methods=['POST'])
+def accept_twitter_post():
+    """
+    Accept a twitter post and transfer it to posts table
+    Bypasses RLS using admin client
+    """
+    try:
+        data = request.json
+        
+        if not data or not data.get('twitter_unique_id'):
+            return jsonify({
+                "success": False,
+                "error": "twitter_unique_id is required"
+            }), 400
+        
+        twitter_unique_id = data.get('twitter_unique_id')
+        
+        print(f"\n✅ Accepting Twitter post: {twitter_unique_id}")
+        
+        # 1. Update status in twitter_posts
+        update_response = supabase_admin.table('twitter_posts').update({
+            'status': 'accepted'
+        }).eq('twitter_unique_id', twitter_unique_id).execute()
+        
+        if not update_response.data:
+            return jsonify({
+                "success": False,
+                "error": "Twitter post not found"
+            }), 404
+        
+        post = update_response.data[0]
+        
+        # 2. Insert into posts table
+        post_data = {
+            "user_id": post['user_id'],
+            "content": post['content'],
+            "post_type": post['post_type'],
+            "media_url": post['media_url'],
+            "twitter_unique_id": post['twitter_unique_id'],
+            "twitter_username": post['twitter_username'],
+            "source": post['source'],
+            "location": post['location'],
+            "link_preview": post['link_preview']
+        }
+        
+        insert_response = supabase_admin.table('posts').insert(post_data).execute()
+        
+        print(f"✅ Post transferred successfully")
+        
+        return jsonify({
+            "success": True,
+            "data": insert_response.data,
+            "message": "Post accepted and published successfully"
+        }), 200
+        
+    except Exception as e:
+        print(f"\n❌ Error accepting post: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+    
 
 if __name__ == "__main__":
     app.run(debug=True, port=5001)
