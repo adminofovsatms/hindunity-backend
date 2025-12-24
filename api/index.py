@@ -76,7 +76,7 @@ def get_s3_client():
             aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
             region_name=os.getenv('AWS_REGION', 'us-east-1')
         )
-    return _s3_client
+    return _s3_client 
 
 def get_s3_bucket():
     return os.getenv('AWS_S3_BUCKET')
